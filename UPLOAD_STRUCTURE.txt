@@ -1,0 +1,14 @@
+ارفع محتويات هذا المجلد إلى GitHub بهذا الشكل:
+
+public/
+  index.html
+
+netlify/
+  functions/
+    api.mjs
+
+package.json
+netlify.toml
+
+لا ترفع ملف ZIP نفسه إلى GitHub.
+فك الضغط أولاً، ثم اسحب مجلد public ومجلد netlify والملفين package.json و netlify.toml.

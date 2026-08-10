@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090b12">
+<title>MOD STREAM Control</title>
+<style>
+:root{
+  --bg:#070910;--panel:#0d111b;--panel2:#121927;--line:#242d3d;
+  --text:#f7f8fb;--muted:#8e98aa;--accent:#765cff;--accent2:#5d46e8;
+  --ok:#31d17c;--bad:#ff5d6c;--warn:#ffc259
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;color:var(--text);font-family:Arial,Tahoma,sans-serif;background:
+radial-gradient(circle at 70% 0,#191c36 0,transparent 34%),
+linear-gradient(180deg,#090b12,#06080d 50%)}
+.app{max-width:1100px;margin:auto;padding:18px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.brand{display:flex;align-items:center;gap:11px}
+.logo{width:44px;height:44px;border-radius:14px;background:linear-gradient(145deg,var(--accent),#2c235f);display:grid;place-items:center;font-size:23px;font-weight:900;border:1px solid #8976ff}
+.brand h1{margin:0;font-size:21px}.brand p{margin:4px 0 0;color:var(--muted);font-size:12px}
+.status{border:1px solid var(--line);background:rgba(15,20,30,.88);padding:9px 12px;border-radius:999px;font-weight:900;font-size:13px}
+.status.on{color:var(--ok)}.status.off{color:var(--bad)}
+.hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:22px;padding:22px;background:
+linear-gradient(135deg,rgba(118,92,255,.22),transparent 44%),
+linear-gradient(180deg,#101626,#0b0f18);margin-bottom:14px}
+.hero:after{content:"";position:absolute;inset:auto -70px -100px auto;width:280px;height:280px;border-radius:50%;background:rgba(118,92,255,.12)}
+.livepill{display:inline-flex;align-items:center;gap:7px;background:rgba(255,93,108,.12);border:1px solid rgba(255,93,108,.3);color:#ff8994;padding:7px 10px;border-radius:999px;font-size:12px;font-weight:900}
+.livepill .pulse{width:8px;height:8px;border-radius:50%;background:var(--bad);box-shadow:0 0 16px var(--bad)}
+.hero h2{margin:14px 0 7px;font-size:25px}.hero p{margin:0;color:var(--muted);max-width:680px}
+.stream-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}
+.btn{border:0;border-radius:13px;padding:13px 15px;color:white;background:var(--accent);font-weight:900;cursor:pointer;font-size:14px}
+.btn:hover{filter:brightness(1.07)}.btn.ok{background:var(--ok);color:#04130b}.btn.bad{background:var(--bad)}.btn.dark{background:#171e2c;border:1px solid var(--line)}
+.btn.watch{background:linear-gradient(135deg,#ff394f,#ff6b78);box-shadow:0 10px 30px rgba(255,57,79,.18)}
+.hidden{display:none!important}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:linear-gradient(180deg,var(--panel),#0a0e16);border:1px solid var(--line);border-radius:19px;padding:17px;margin-bottom:14px}
+.title{font-size:17px;font-weight:900;margin-bottom:12px}.muted{color:var(--muted);font-size:12px}
+input,select{width:100%;background:#080b12;color:#fff;border:1px solid var(--line);border-radius:12px;padding:13px;font-size:14px;margin-bottom:9px;outline:none}
+input:focus{border-color:#6e5af0;box-shadow:0 0 0 3px rgba(118,92,255,.12)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.list{display:flex;flex-direction:column;gap:9px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid var(--line);background:var(--panel2);border-radius:13px}
+.name{font-weight:900}.small{font-size:12px;color:var(--muted);margin-top:4px}.points{font-weight:900}
+.progress{height:7px;background:#080c13;border-radius:999px;overflow:hidden;margin-top:7px}.bar{height:100%;border-radius:999px;background:var(--accent)}
+.adminWrap{display:none}.adminWrap.show{display:block}.adminPanel{display:none;margin-top:14px}.adminGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.box{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px}
+.actions{display:flex;gap:7px;flex-wrap:wrap}.mini{padding:8px 10px;border:1px solid var(--line);background:#1a2230;color:#fff;border-radius:9px;cursor:pointer;font-weight:800}.mini.bad{background:var(--bad);border-color:var(--bad)}
+.log{padding:10px 0;border-bottom:1px solid var(--line)}.empty{text-align:center;color:var(--muted);padding:18px}
+.toast{display:none;position:fixed;left:16px;bottom:16px;background:#121925;border:1px solid var(--line);padding:12px 14px;border-radius:12px;z-index:50}
+.footer{text-align:center;color:var(--muted);font-size:11px;padding:8px 0 18px}
+@media(max-width:760px){.grid,.adminGrid,.two{grid-template-columns:1fr}.app{padding:12px}.hero h2{font-size:21px}.topbar{align-items:flex-start}.status{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div>
+        <h1>MOD STREAM</h1>
+        <p>لوحة حضور طاقم البث</p>
+      </div>
+    </div>
+    <div id="status" class="status off">● البث متوقف</div>
+  </div>
+
+  <section class="hero">
+    <div id="livePill" class="livepill"><span class="pulse"></span><span id="livePillText">OFFLINE</span></div>
+    <h2 id="streamTitle">لا يوجد بث مباشر الآن</h2>
+    <p id="streamDesc">عند بدء البث سيظهر هنا اسم البث ورابط المشاهدة للمودات.</p>
+    <div class="stream-actions">
+      <a id="watchBtn" class="btn watch hidden" href="#" target="_blank" rel="noopener">🔴 مشاهدة البث</a>
+      <span id="platformBadge" class="btn dark hidden"></span>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <div class="title">✅ تسجيل الحضور</div>
+      <input id="name" autocomplete="off" placeholder="اكتب اسمك">
+      <input id="pin" type="password" placeholder="PIN الخاص بك">
+      <div class="two">
+        <button id="checkin" class="btn ok">✅ تسجيل دخول</button>
+        <button id="checkout" class="btn bad">🚪 تسجيل خروج</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="title">🟢 الموجودين الآن</div>
+      <div id="active" class="list"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="title">🏆 الترتيب الأسبوعي</div>
+    <div id="board" class="list"></div>
+  </section>
+
+  <section class="card">
+    <button id="openAdmin" class="btn dark" style="width:100%">👑 فتح لوحة الإدارة</button>
+
+    <div id="adminWrap" class="adminWrap">
+      <div style="height:12px"></div>
+      <input id="adminPin" type="password" placeholder="PIN الإدارة">
+      <button id="adminLogin" class="btn" style="width:100%">دخول الإدارة</button>
+
+      <div id="adminPanel" class="adminPanel">
+        <div class="adminGrid">
+          <div class="box">
+            <div class="title">🔴 تشغيل البث</div>
+            <input id="streamNameInput" placeholder="اسم البث - مثال: بث أبو حضرة">
+            <input id="streamUrlInput" placeholder="رابط البث - YouTube / Kick / Twitch">
+            <select id="platformInput">
+              <option value="">اختيار المنصة</option>
+              <option value="YouTube">YouTube</option>
+              <option value="Kick">Kick</option>
+              <option value="Twitch">Twitch</option>
+              <option value="TikTok">TikTok</option>
+              <option value="Other">منصة أخرى</option>
+            </select>
+            <div class="two">
+              <button id="startStream" class="btn ok">بدء البث</button>
+              <button id="endStream" class="btn bad">إنهاء البث</button>
+            </div>
+          </div>
+
+          <div class="box">
+            <div class="title">➕ إضافة مود</div>
+            <input id="newName" placeholder="اسم المود">
+            <input id="newPin" placeholder="PIN للمود">
+            <button id="addMod" class="btn" style="width:100%">إضافة المود</button>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="box">
+          <div class="title">👥 إدارة المودات</div>
+          <div id="mods" class="list"></div>
+          <div style="height:10px"></div>
+          <button id="resetWeek" class="btn dark" style="width:100%">🔄 تصفير نقاط الأسبوع</button>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="box">
+          <div class="title">📋 اللوقات — خاصة بالإدارة</div>
+          <button id="refreshLogs" class="btn dark" style="width:100%;margin-bottom:7px">تحديث اللوقات</button>
+          <div id="logs"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">MOD STREAM ATTENDANCE SYSTEM</div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+let publicData=null, adminData=null, adminPin="";
+const API="/.netlify/functions/api";
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+const dur=ms=>{const m=Math.max(0,Math.floor(ms/60000)),h=Math.floor(m/60),r=m%60;return h?`${h}س ${r}د`:`${r}د`};
+function toast(text){const e=$("#toast");e.textContent=text;e.style.display="block";setTimeout(()=>e.style.display="none",2200)}
+async function api(action,method="GET",data){
+  const r=await fetch(`${API}?action=${encodeURIComponent(action)}`,{
+    method,headers:{"Content-Type":"application/json","x-admin-pin":adminPin},
+    body:data?JSON.stringify(data):undefined
+  });
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||"حدث خطأ");
+  return j;
+}
+async function refreshPublic(){publicData=await api("state");renderPublic()}
+function renderPublic(){
+  const s=publicData.stream||{};
+  $("#status").className="status "+(s.active?"on":"off");
+  $("#status").textContent=s.active?"● البث مباشر":"● البث متوقف";
+  $("#livePillText").textContent=s.active?"LIVE NOW":"OFFLINE";
+  $("#streamTitle").textContent=s.active?(s.title||"البث مباشر الآن"):"لا يوجد بث مباشر الآن";
+  $("#streamDesc").textContent=s.active?"المودات يقدرون يفتحون البث مباشرة من هنا.":"عند بدء البث سيظهر هنا اسم البث ورابط المشاهدة للمودات.";
+
+  if(s.active && s.url){
+    $("#watchBtn").classList.remove("hidden");
+    $("#watchBtn").href=s.url;
+  }else{
+    $("#watchBtn").classList.add("hidden");
+    $("#watchBtn").removeAttribute("href");
+  }
+
+  if(s.active && s.platform){
+    $("#platformBadge").classList.remove("hidden");
+    $("#platformBadge").textContent="📺 "+s.platform;
+  }else{
+    $("#platformBadge").classList.add("hidden");
+  }
+
+  $("#active").innerHTML=publicData.active.length?publicData.active.map(x=>`
+    <div class="row">
+      <div><div class="name">${esc(x.name)}</div><div class="small">${dur(x.durationMs)}</div></div>
+      <div class="points">+${x.livePoints} ⭐</div>
+    </div>`).join(""):'<div class="empty">لا يوجد أحد الآن</div>';
+
+  $("#board").innerHTML=publicData.leaderboard.length?publicData.leaderboard.slice(0,15).map((x,i)=>{
+    const target=Math.max(1,publicData.weeklyTarget||60);
+    const pc=Math.min(100,Math.max(0,Math.round((x.weekPoints/target)*100)));
+    return `<div class="row">
+      <div style="flex:1">
+        <div class="name">${i+1}. ${esc(x.name)}</div>
+        <div class="small">${x.weekPoints} / ${target} نقطة أسبوعية</div>
+        <div class="progress"><div class="bar" style="width:${pc}%"></div></div>
+      </div>
+      <div class="points">${pc}%</div>
+    </div>`;
+  }).join(""):'<div class="empty">لا يوجد مودات بعد</div>';
+}
+async function attendance(action){
+  try{
+    const name=$("#name").value.trim(),pin=$("#pin").value.trim();
+    if(!name||!pin)return toast("اكتب اسمك وPIN");
+    const r=await api(action,"POST",{name,pin});
+    $("#pin").value="";
+    await refreshPublic();
+    toast(action==="checkout"&&r.earned!=null?`تم ✅ +${r.earned} نقطة`:"تم ✅");
+  }catch(e){toast(e.message)}
+}
+$("#checkin").onclick=()=>attendance("checkin");
+$("#checkout").onclick=()=>attendance("checkout");
+$("#openAdmin").onclick=()=>$("#adminWrap").classList.toggle("show");
+
+$("#adminLogin").onclick=async()=>{
+  adminPin=$("#adminPin").value.trim();
+  try{
+    await api("admin-login","POST",{});
+    $("#adminPin").style.display="none";
+    $("#adminLogin").style.display="none";
+    $("#adminPanel").style.display="block";
+    await refreshAdmin();await loadLogs();toast("تم دخول الإدارة ✅");
+  }catch(e){adminPin="";toast(e.message)}
+};
+
+async function refreshAdmin(){
+  adminData=await api("admin-state");
+  $("#mods").innerHTML=adminData.mods.length?adminData.mods.map(m=>`
+    <div class="row">
+      <div>
+        <div class="name">${esc(m.name)}</div>
+        <div class="small">الأسبوع: ${m.weekPoints} ⭐ • الكل: ${m.totalPoints} ⭐</div>
+      </div>
+      <div class="actions">
+        <button class="mini" data-p="${m.id}">نقاط</button>
+        <button class="mini bad" data-d="${m.id}">حذف</button>
+      </div>
+    </div>`).join(""):'<div class="empty">أضف أول مود</div>';
+
+  document.querySelectorAll("[data-p]").forEach(b=>b.onclick=async()=>{
+    const a=prompt("اكتب النقاط: مثال 5 أو -5");if(!a)return;
+    await adminAction("admin-points",{id:b.dataset.p,amount:Number(a)});
+  });
+  document.querySelectorAll("[data-d]").forEach(b=>b.onclick=async()=>{
+    if(confirm("متأكد من حذف المود؟"))await adminAction("admin-mod-delete",{id:b.dataset.d});
+  });
+}
+async function loadLogs(){
+  try{
+    const d=await api("admin-logs");
+    $("#logs").innerHTML=d.logs.length?d.logs.map(l=>`
+      <div class="log">
+        <div class="name">${esc(l.type)} — ${esc(l.message)}</div>
+        <div class="small">${new Date(l.at).toLocaleString("ar-SA")}</div>
+      </div>`).join(""):'<div class="empty">لا توجد لوقات بعد</div>';
+  }catch(e){toast(e.message)}
+}
+async function adminAction(action,data={}){
+  try{
+    await api(action,"POST",data);
+    await refreshPublic();await refreshAdmin();await loadLogs();toast("تم ✅");
+  }catch(e){toast(e.message)}
+}
+$("#startStream").onclick=()=>{
+  const title=$("#streamNameInput").value.trim()||"البث الحالي";
+  const url=$("#streamUrlInput").value.trim();
+  const platform=$("#platformInput").value;
+  adminAction("admin-stream-start",{title,url,platform});
+};
+$("#endStream").onclick=()=>adminAction("admin-stream-end");
+$("#addMod").onclick=async()=>{
+  const name=$("#newName").value.trim(),pin=$("#newPin").value.trim();
+  if(!name||!pin)return toast("اكتب اسم المود وPIN");
+  await adminAction("admin-mod-add",{name,pin,role:"Moderator"});
+  $("#newName").value="";$("#newPin").value="";
+};
+$("#resetWeek").onclick=()=>confirm("متأكد من تصفير نقاط الأسبوع؟")&&adminAction("admin-week-reset");
+$("#refreshLogs").onclick=loadLogs;
+
+refreshPublic().catch(()=>toast("تعذر الاتصال بالخادم"));
+setInterval(()=>refreshPublic().catch(()=>{}),5000);
+</script>
+</body>
+</html>
