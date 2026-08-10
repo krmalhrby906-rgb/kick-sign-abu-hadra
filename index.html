@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOD STREAM</title>
+<style>
+:root{--bg:#07090e;--card:#10151d;--card2:#171e28;--line:#273140;--text:#f5f7fb;--muted:#929cab;--accent:#6d5cff;--ok:#30d17b;--bad:#ff5e6d;--warn:#ffbf5c}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#151a31 0,#07090e 45%);color:var(--text);font-family:Arial,Tahoma,sans-serif}
+.wrap{max-width:980px;margin:auto;padding:18px}.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:15px}
+h1{margin:0;font-size:24px}.muted{color:var(--muted);font-size:13px}.status{padding:9px 13px;border:1px solid var(--line);background:var(--card);border-radius:999px;font-weight:800}.on{color:var(--ok)}.off{color:var(--bad)}
+.card{background:linear-gradient(180deg,var(--card),#0b0f15);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px}.title{font-size:18px;font-weight:900;margin-bottom:13px}
+input{width:100%;background:#090c12;color:#fff;border:1px solid var(--line);border-radius:13px;padding:13px;font-size:15px;margin-bottom:10px;outline:none}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{border:0;border-radius:14px;padding:14px;font-weight:900;font-size:15px;cursor:pointer;color:#fff;background:var(--accent)}.btn.ok{background:var(--ok);color:#06150d}.btn.bad{background:var(--bad)}.btn.dark{background:var(--card2);border:1px solid var(--line)}
+.list{display:flex;flex-direction:column;gap:9px}.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;border-radius:13px;border:1px solid var(--line);background:var(--card2)}.name{font-weight:900}.small{color:var(--muted);font-size:12px;margin-top:4px}.points{font-weight:900}.empty{text-align:center;color:var(--muted);padding:18px}
+.progress{height:8px;background:#0a0e14;border-radius:999px;overflow:hidden;margin-top:7px}.bar{height:100%;background:var(--accent);border-radius:999px}.admin{display:none}.admin.show{display:block}.adminPanel{display:none;margin-top:14px}
+.actions{display:flex;gap:7px;flex-wrap:wrap}.mini{padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:#1b2330;color:#fff;font-weight:800;cursor:pointer}.mini.bad{background:var(--bad);border-color:var(--bad)}
+.log{padding:11px 0;border-bottom:1px solid var(--line)}.log:last-child{border-bottom:0}.toast{display:none;position:fixed;bottom:16px;left:16px;padding:12px 15px;background:#111926;border:1px solid var(--line);border-radius:12px;z-index:30}.adminGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.adminBox{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:14px}
+@media(max-width:700px){.grid,.buttons,.adminGrid{grid-template-columns:1fr}.wrap{padding:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>🎬 MOD STREAM</h1>
+      <div class="muted">تسجيل حضور المودات والنقاط الأسبوعية</div>
+    </div>
+    <div id="status" class="status off">● البث متوقف</div>
+  </div>
+
+  <div class="card">
+    <div class="title">✅ تسجيل الحضور</div>
+    <input id="name" autocomplete="off" placeholder="اكتب اسمك">
+    <input id="pin" type="password" placeholder="PIN الخاص بك">
+    <div class="buttons">
+      <button id="checkin" class="btn ok">✅ تسجيل دخول</button>
+      <button id="checkout" class="btn bad">🚪 تسجيل خروج</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="title">🟢 الموجودين الآن</div>
+      <div id="active" class="list"></div>
+    </div>
+    <div class="card">
+      <div class="title">🏆 الترتيب الأسبوعي</div>
+      <div id="board" class="list"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <button id="openAdmin" class="btn dark" style="width:100%">👑 الإدارة</button>
+    <div id="admin" class="admin">
+      <div style="height:12px"></div>
+      <input id="adminPin" type="password" placeholder="PIN الإدارة">
+      <button id="adminLogin" class="btn" style="width:100%">دخول</button>
+
+      <div id="adminPanel" class="adminPanel">
+        <div class="adminGrid">
+          <div class="adminBox">
+            <div class="title">🔴 البث</div>
+            <div class="buttons">
+              <button id="startStream" class="btn ok">بدء البث</button>
+              <button id="endStream" class="btn bad">إنهاء البث</button>
+            </div>
+          </div>
+
+          <div class="adminBox">
+            <div class="title">➕ إضافة مود</div>
+            <input id="newName" placeholder="اسم المود">
+            <input id="newPin" placeholder="PIN للمود">
+            <button id="addMod" class="btn" style="width:100%">إضافة</button>
+          </div>
+        </div>
+
+        <div style="height:14px"></div>
+        <div class="adminBox">
+          <div class="title">👥 إدارة المودات</div>
+          <div id="mods" class="list"></div>
+          <div style="height:12px"></div>
+          <button id="resetWeek" class="btn dark" style="width:100%">🔄 تصفير نقاط الأسبوع</button>
+        </div>
+
+        <div style="height:14px"></div>
+        <div class="adminBox">
+          <div class="title">📋 اللوقات — للإدارة فقط</div>
+          <button id="refreshLogs" class="btn dark" style="width:100%;margin-bottom:8px">تحديث اللوقات</button>
+          <div id="logs"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+let publicData = null;
+let adminData = null;
+let adminPin = "";
+
+const API = "/.netlify/functions/api";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+}[m]));
+const dur = (ms) => {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? `${h}س ${r}د` : `${r}د`;
+};
+
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", 2200);
+}
+
+async function api(action, method = "GET", data) {
+  const res = await fetch(`${API}?action=${encodeURIComponent(action)}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-pin": adminPin
+    },
+    body: data ? JSON.stringify(data) : undefined
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "حدث خطأ");
+  return json;
+}
+
+async function refreshPublic() {
+  publicData = await api("state");
+  renderPublic();
+}
+
+function renderPublic() {
+  $("#status").className = "status " + (publicData.stream.active ? "on" : "off");
+  $("#status").textContent = publicData.stream.active ? "● البث مباشر" : "● البث متوقف";
+
+  $("#active").innerHTML = publicData.active.length
+    ? publicData.active.map(x => `
+      <div class="row">
+        <div>
+          <div class="name">${esc(x.name)}</div>
+          <div class="small">${dur(x.durationMs)}</div>
+        </div>
+        <div class="points">+${x.livePoints} ⭐</div>
+      </div>`).join("")
+    : '<div class="empty">لا يوجد أحد الآن</div>';
+
+  $("#board").innerHTML = publicData.leaderboard.length
+    ? publicData.leaderboard.slice(0, 10).map((x, i) => {
+        const target = Math.max(1, publicData.weeklyTarget || 60);
+        const percent = Math.min(100, Math.max(0, Math.round((x.weekPoints / target) * 100)));
+        return `
+          <div class="row">
+            <div style="flex:1">
+              <div class="name">${i + 1}. ${esc(x.name)}</div>
+              <div class="small">${x.weekPoints} / ${target} نقطة أسبوعية</div>
+              <div class="progress"><div class="bar" style="width:${percent}%"></div></div>
+            </div>
+            <div class="points">${percent}%</div>
+          </div>`;
+      }).join("")
+    : '<div class="empty">لا يوجد مودات بعد</div>';
+}
+
+async function attendance(action) {
+  try {
+    const name = $("#name").value.trim();
+    const pin = $("#pin").value.trim();
+    if (!name || !pin) return toast("اكتب اسمك وPIN");
+    const result = await api(action, "POST", { name, pin });
+    $("#pin").value = "";
+    await refreshPublic();
+    toast(action === "checkout" && result.earned != null ? `تم ✅ +${result.earned} نقطة` : "تم ✅");
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#checkin").onclick = () => attendance("checkin");
+$("#checkout").onclick = () => attendance("checkout");
+$("#openAdmin").onclick = () => $("#admin").classList.toggle("show");
+
+$("#adminLogin").onclick = async () => {
+  adminPin = $("#adminPin").value.trim();
+  try {
+    await api("admin-login", "POST", {});
+    $("#adminPin").style.display = "none";
+    $("#adminLogin").style.display = "none";
+    $("#adminPanel").style.display = "block";
+    await refreshAdmin();
+    await loadLogs();
+    toast("تم دخول الإدارة ✅");
+  } catch (e) {
+    adminPin = "";
+    toast(e.message);
+  }
+};
+
+async function refreshAdmin() {
+  adminData = await api("admin-state");
+  $("#mods").innerHTML = adminData.mods.length
+    ? adminData.mods.map(m => `
+      <div class="row">
+        <div>
+          <div class="name">${esc(m.name)}</div>
+          <div class="small">الأسبوع: ${m.weekPoints} ⭐ • الكل: ${m.totalPoints} ⭐</div>
+        </div>
+        <div class="actions">
+          <button class="mini" data-points="${m.id}">نقاط</button>
+          <button class="mini bad" data-delete="${m.id}">حذف</button>
+        </div>
+      </div>`).join("")
+    : '<div class="empty">أضف أول مود</div>';
+
+  document.querySelectorAll("[data-points]").forEach(btn => {
+    btn.onclick = async () => {
+      const amount = prompt("اكتب النقاط: مثال 5 أو -5");
+      if (!amount) return;
+      await adminAction("admin-points", { id: btn.dataset.points, amount: Number(amount) });
+    };
+  });
+
+  document.querySelectorAll("[data-delete]").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm("متأكد من حذف المود؟")) return;
+      await adminAction("admin-mod-delete", { id: btn.dataset.delete });
+    };
+  });
+}
+
+async function loadLogs() {
+  try {
+    const data = await api("admin-logs");
+    $("#logs").innerHTML = data.logs.length
+      ? data.logs.map(l => `
+        <div class="log">
+          <div class="name">${esc(l.type)} — ${esc(l.message)}</div>
+          <div class="small">${new Date(l.at).toLocaleString("ar-SA")}</div>
+        </div>`).join("")
+      : '<div class="empty">لا توجد لوقات بعد</div>';
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function adminAction(action, data = {}) {
+  try {
+    await api(action, "POST", data);
+    await refreshPublic();
+    await refreshAdmin();
+    await loadLogs();
+    toast("تم ✅");
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+$("#startStream").onclick = () => adminAction("admin-stream-start");
+$("#endStream").onclick = () => adminAction("admin-stream-end");
+
+$("#addMod").onclick = async () => {
+  const name = $("#newName").value.trim();
+  const pin = $("#newPin").value.trim();
+  if (!name || !pin) return toast("اكتب اسم المود وPIN");
+  await adminAction("admin-mod-add", { name, pin, role: "Moderator" });
+  $("#newName").value = "";
+  $("#newPin").value = "";
+};
+
+$("#resetWeek").onclick = () => {
+  if (confirm("متأكد من تصفير نقاط الأسبوع للجميع؟"))
+    adminAction("admin-week-reset");
+};
+
+$("#refreshLogs").onclick = loadLogs;
+
+refreshPublic().catch(e => toast("تعذر الاتصال بالخادم"));
+setInterval(() => refreshPublic().catch(() => {}), 5000);
+</script>
+</body>
+</html>

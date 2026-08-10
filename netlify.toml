@@ -1,0 +1,7 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+  command = "echo Netlify attendance ready"
+
+[functions]
+  node_bundler = "esbuild"
