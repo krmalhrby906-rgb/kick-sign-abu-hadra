@@ -5,6 +5,7 @@ const STORE_NAME = "mod-stream-attendance";
 const DB_KEY = "database";
 const ADMIN_PIN = process.env.ADMIN_PIN || "6868";
 const WEEKLY_TARGET = Number(process.env.WEEKLY_TARGET || "60");
+const KICK_ACTIVITY_MINUTES = Number(process.env.KICK_ACTIVITY_MINUTES || "30");
 
 const pointsConfig = {
   checkIn: 5,
@@ -16,10 +17,12 @@ const pointsConfig = {
 
 function emptyDB() {
   return {
-    stream: { active: false, startedAt: null, endedAt: null },
+    stream: { active: false, startedAt: null, endedAt: null, title: "", url: "", platform: "" },
     mods: [],
     sessions: [],
     logs: [],
+    kickWebhookIds: [],
+    kickConnection: { connected: false, broadcasterUserId: null, channelSlug: "", checkedAt: null },
     weeklyTarget: WEEKLY_TARGET,
     createdAt: Date.now(),
   };
@@ -27,18 +30,33 @@ function emptyDB() {
 
 function normalize(db) {
   db ||= emptyDB();
-  db.stream ||= { active: false, startedAt: null, endedAt: null };
+  db.stream ||= { active: false, startedAt: null, endedAt: null, title: "", url: "", platform: "" };
+  db.stream.title ||= "";
+  db.stream.url ||= "";
+  db.stream.platform ||= "";
   db.mods ||= [];
   db.sessions ||= [];
   db.logs ||= [];
+  db.kickWebhookIds ||= [];
+  db.kickConnection ||= { connected: false, broadcasterUserId: null, channelSlug: "", checkedAt: null };
   db.weeklyTarget = Number(db.weeklyTarget || WEEKLY_TARGET);
+
   for (const mod of db.mods) {
     mod.totalPoints = Number(mod.totalPoints || 0);
     mod.weekPoints = Number(mod.weekPoints || 0);
     mod.totalMinutes = Number(mod.totalMinutes || 0);
     mod.streamsAttended = Number(mod.streamsAttended || 0);
     mod.activeSessionId ||= null;
+    mod.kickUsername ||= "";
+    mod.lastKickMessageAt ||= null;
+    mod.lastKickMessageExcerpt ||= "";
   }
+
+  for (const session of db.sessions) {
+    session.lastKickMessageAt ||= null;
+    session.lastKickMessageExcerpt ||= "";
+  }
+
   return db;
 }
 
@@ -53,7 +71,7 @@ async function loadEntry() {
 }
 
 async function mutate(fn) {
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 7; attempt++) {
     const { db, etag } = await loadEntry();
     const result = await fn(db);
     const options = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
@@ -63,18 +81,11 @@ async function mutate(fn) {
   throw new Error("حصل تعارض بسيط، حاول مرة ثانية.");
 }
 
-function id() {
-  return crypto.randomUUID();
-}
-function now() {
-  return Date.now();
-}
-function minutes(ms) {
-  return Math.max(0, Math.floor(ms / 60000));
-}
-function clean(v, max = 80) {
-  return String(v ?? "").trim().slice(0, max);
-}
+function id() { return crypto.randomUUID(); }
+function now() { return Date.now(); }
+function minutes(ms) { return Math.max(0, Math.floor(ms / 60000)); }
+function clean(v, max = 80) { return String(v ?? "").trim().slice(0, max); }
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -84,33 +95,49 @@ function json(data, status = 200) {
     },
   });
 }
+
 function isAdmin(req) {
   return String(req.headers.get("x-admin-pin") || "") === String(ADMIN_PIN);
 }
+
 function activeSession(db, mod) {
   return mod.activeSessionId
     ? db.sessions.find((s) => s.id === mod.activeSessionId) || null
     : null;
 }
+
 function previewPoints(session) {
   if (!session) return 0;
   const end = session.checkedOutAt || now();
   const durationMinutes = minutes(end - session.checkedInAt);
-  return (
-    Number(session.basePoints || 0) +
-    Math.floor(durationMinutes / 30) * pointsConfig.per30Minutes
-  );
+  return Number(session.basePoints || 0) +
+    Math.floor(durationMinutes / 30) * Number(pointsConfig.per30Minutes || 0);
 }
+
 function pushLog(db, type, message, meta = {}) {
-  db.logs.unshift({
-    id: id(),
-    type,
-    message,
-    at: now(),
-    meta,
-  });
-  db.logs = db.logs.slice(0, 2000);
+  db.logs.unshift({ id: id(), type, message, at: now(), meta });
+  db.logs = db.logs.slice(0, 2500);
 }
+
+function kickActivity(mod, session) {
+  if (!mod.kickUsername) {
+    return { status: "not_linked", label: "Kick غير مربوط", lastAt: null, minutesAgo: null };
+  }
+
+  const lastAt = session?.lastKickMessageAt || null;
+
+  if (!lastAt) {
+    return { status: "waiting", label: "بانتظار أول رسالة", lastAt: null, minutesAgo: null };
+  }
+
+  const ago = minutes(now() - lastAt);
+  if (ago <= KICK_ACTIVITY_MINUTES) {
+    return { status: "active", label: `نشط • كتب قبل ${ago}د`, lastAt, minutesAgo: ago };
+  }
+
+  return { status: "stale", label: `ساكت من ${ago}د`, lastAt, minutesAgo: ago };
+}
+
 function publicState(db) {
   const active = db.mods
     .filter((m) => m.activeSessionId)
@@ -119,9 +146,11 @@ function publicState(db) {
       return {
         id: m.id,
         name: m.name,
+        kickUsername: m.kickUsername || "",
         checkedInAt: s?.checkedInAt || null,
         durationMs: s ? (s.checkedOutAt || now()) - s.checkedInAt : 0,
         livePoints: previewPoints(s),
+        kickActivity: kickActivity(m, s),
       };
     });
 
@@ -135,8 +164,7 @@ function publicState(db) {
         role: m.role || "Moderator",
         totalPoints: m.totalPoints + live,
         weekPoints: m.weekPoints + live,
-        totalMinutes:
-          m.totalMinutes +
+        totalMinutes: m.totalMinutes +
           (s ? minutes((s.checkedOutAt || now()) - s.checkedInAt) : 0),
         streamsAttended: m.streamsAttended,
       };
@@ -148,21 +176,31 @@ function publicState(db) {
     active,
     leaderboard,
     weeklyTarget: db.weeklyTarget,
+    kickActivityMinutes: KICK_ACTIVITY_MINUTES,
   };
 }
+
 function adminState(db) {
   return {
     ...publicState(db),
-    mods: db.mods.map((m) => ({
-      id: m.id,
-      name: m.name,
-      role: m.role || "Moderator",
-      totalPoints: m.totalPoints,
-      weekPoints: m.weekPoints,
-      totalMinutes: m.totalMinutes,
-      streamsAttended: m.streamsAttended,
-      active: !!m.activeSessionId,
-    })),
+    kickConnection: db.kickConnection,
+    mods: db.mods.map((m) => {
+      const s = activeSession(db, m);
+      return {
+        id: m.id,
+        name: m.name,
+        role: m.role || "Moderator",
+        kickUsername: m.kickUsername || "",
+        totalPoints: m.totalPoints,
+        weekPoints: m.weekPoints,
+        totalMinutes: m.totalMinutes,
+        streamsAttended: m.streamsAttended,
+        active: !!m.activeSessionId,
+        kickActivity: s ? kickActivity(m, s) : null,
+        lastKickMessageAt: m.lastKickMessageAt || null,
+        lastKickMessageExcerpt: m.lastKickMessageExcerpt || "",
+      };
+    }),
   };
 }
 
@@ -183,18 +221,12 @@ export default async (req) => {
 
         const name = clean(body.name).toLowerCase();
         const pin = clean(body.pin);
-        const mod = db.mods.find(
-          (m) => String(m.name).trim().toLowerCase() === name
-        );
+        const mod = db.mods.find((m) => String(m.name).trim().toLowerCase() === name);
 
-        if (!mod || String(mod.pin) !== pin)
-          throw new Error("الاسم أو PIN غير صحيح.");
-        if (mod.activeSessionId)
-          throw new Error("أنت مسجل دخول بالفعل.");
+        if (!mod || String(mod.pin) !== pin) throw new Error("الاسم أو PIN غير صحيح.");
+        if (mod.activeSessionId) throw new Error("أنت مسجل دخول بالفعل.");
 
-        const lateMinutes = db.stream.startedAt
-          ? minutes(now() - db.stream.startedAt)
-          : 0;
+        const lateMinutes = db.stream.startedAt ? minutes(now() - db.stream.startedAt) : 0;
         let basePoints = pointsConfig.checkIn;
         let latePenalty = 0;
 
@@ -211,18 +243,23 @@ export default async (req) => {
           basePoints,
           latePenalty,
           awarded: false,
+          lastKickMessageAt: null,
+          lastKickMessageExcerpt: "",
         };
 
         db.sessions.push(session);
         mod.activeSessionId = session.id;
-        pushLog(
-          db,
-          "تسجيل دخول",
-          `${mod.name} سجل دخول`,
-          { modId: mod.id, lateMinutes, basePoints }
-        );
+
+        pushLog(db, "تسجيل دخول", `${mod.name} سجل دخول`, {
+          modId: mod.id,
+          kickUsername: mod.kickUsername || "",
+          lateMinutes,
+          basePoints,
+        });
+
         return { ok: true };
       });
+
       return json(result);
     }
 
@@ -231,21 +268,16 @@ export default async (req) => {
       const result = await mutate((db) => {
         const name = clean(body.name).toLowerCase();
         const pin = clean(body.pin);
-        const mod = db.mods.find(
-          (m) => String(m.name).trim().toLowerCase() === name
-        );
+        const mod = db.mods.find((m) => String(m.name).trim().toLowerCase() === name);
 
-        if (!mod || String(mod.pin) !== pin)
-          throw new Error("الاسم أو PIN غير صحيح.");
+        if (!mod || String(mod.pin) !== pin) throw new Error("الاسم أو PIN غير صحيح.");
 
         const session = activeSession(db, mod);
         if (!session) throw new Error("أنت غير مسجل دخول.");
 
         session.checkedOutAt = now();
         const earned = previewPoints(session);
-        const durationMinutes = minutes(
-          session.checkedOutAt - session.checkedInAt
-        );
+        const durationMinutes = minutes(session.checkedOutAt - session.checkedInAt);
 
         mod.totalPoints += earned;
         mod.weekPoints += earned;
@@ -256,15 +288,16 @@ export default async (req) => {
         session.awarded = true;
         session.awardedPoints = earned;
 
-        pushLog(
-          db,
-          "تسجيل خروج",
-          `${mod.name} سجل خروج (+${earned} نقطة)`,
-          { modId: mod.id, durationMinutes, earned }
-        );
+        pushLog(db, "تسجيل خروج", `${mod.name} سجل خروج (+${earned} نقطة)`, {
+          modId: mod.id,
+          durationMinutes,
+          earned,
+          lastKickMessageAt: session.lastKickMessageAt || null,
+        });
 
         return { ok: true, earned };
       });
+
       return json(result);
     }
 
@@ -283,14 +316,37 @@ export default async (req) => {
 
       if (req.method === "GET" && action === "admin-logs") {
         const { db } = await loadEntry();
-        return json({ logs: db.logs.slice(0, 500) });
+        return json({ logs: db.logs.slice(0, 600) });
       }
 
       if (req.method === "POST" && action === "admin-stream-start") {
+        const body = await req.json();
         const result = await mutate((db) => {
           if (db.stream.active) throw new Error("البث شغال بالفعل.");
-          db.stream = { active: true, startedAt: now(), endedAt: null };
-          pushLog(db, "البث", "تم بدء البث");
+
+          const title = clean(body.title || "البث الحالي", 120);
+          const streamUrl = clean(body.url || "", 500);
+          const platform = clean(body.platform || "Kick", 40);
+
+          if (streamUrl) {
+            try {
+              const parsed = new URL(streamUrl);
+              if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+            } catch {
+              throw new Error("رابط البث غير صحيح.");
+            }
+          }
+
+          db.stream = {
+            active: true,
+            startedAt: now(),
+            endedAt: null,
+            title,
+            url: streamUrl,
+            platform,
+          };
+
+          pushLog(db, "البث", `تم بدء البث: ${title}`, { streamUrl, platform });
           return { ok: true };
         });
         return json(result);
@@ -307,11 +363,8 @@ export default async (req) => {
             if (!session) continue;
 
             session.checkedOutAt = end;
-            const earned =
-              previewPoints(session) + pointsConfig.finishBonus;
-            const durationMinutes = minutes(
-              end - session.checkedInAt
-            );
+            const earned = previewPoints(session) + pointsConfig.finishBonus;
+            const durationMinutes = minutes(end - session.checkedInAt);
 
             mod.totalPoints += earned;
             mod.weekPoints += earned;
@@ -323,12 +376,12 @@ export default async (req) => {
             session.awardedPoints = earned;
             session.finishBonus = pointsConfig.finishBonus;
 
-            pushLog(
-              db,
-              "خروج تلقائي",
-              `${mod.name} أنهى البث (+${earned} نقطة)`,
-              { modId: mod.id, durationMinutes, earned }
-            );
+            pushLog(db, "خروج تلقائي", `${mod.name} أنهى البث (+${earned} نقطة)`, {
+              modId: mod.id,
+              durationMinutes,
+              earned,
+              lastKickMessageAt: session.lastKickMessageAt || null,
+            });
           }
 
           db.stream.active = false;
@@ -336,6 +389,7 @@ export default async (req) => {
           pushLog(db, "البث", "تم إنهاء البث");
           return { ok: true };
         });
+
         return json(result);
       }
 
@@ -345,20 +399,27 @@ export default async (req) => {
           const name = clean(body.name);
           const pin = clean(body.pin);
           const role = clean(body.role) || "Moderator";
+          const kickUsername = clean(body.kickUsername).replace(/^@/, "");
 
           if (!name || !pin) throw new Error("اكتب اسم المود وPIN.");
-          if (
-            db.mods.some(
-              (m) => m.name.trim().toLowerCase() === name.toLowerCase()
-            )
-          )
+          if (!kickUsername) throw new Error("اكتب Kick Username للمود.");
+
+          if (db.mods.some((m) => m.name.trim().toLowerCase() === name.toLowerCase())) {
             throw new Error("هذا الاسم موجود بالفعل.");
+          }
+
+          if (db.mods.some((m) => String(m.kickUsername || "").trim().toLowerCase() === kickUsername.toLowerCase())) {
+            throw new Error("حساب Kick هذا مربوط بمود آخر.");
+          }
 
           db.mods.push({
             id: id(),
             name,
             role,
             pin,
+            kickUsername,
+            lastKickMessageAt: null,
+            lastKickMessageExcerpt: "",
             totalPoints: 0,
             weekPoints: 0,
             totalMinutes: 0,
@@ -366,9 +427,33 @@ export default async (req) => {
             activeSessionId: null,
           });
 
-          pushLog(db, "إدارة", `تمت إضافة المود ${name}`);
+          pushLog(db, "إدارة", `تمت إضافة المود ${name} وربط Kick @${kickUsername}`);
           return { ok: true };
         });
+        return json(result);
+      }
+
+      if (req.method === "POST" && action === "admin-mod-kick") {
+        const body = await req.json();
+        const result = await mutate((db) => {
+          const mod = db.mods.find((m) => m.id === body.id);
+          const kickUsername = clean(body.kickUsername).replace(/^@/, "");
+
+          if (!mod) throw new Error("المود غير موجود.");
+          if (!kickUsername) throw new Error("اكتب Kick Username.");
+
+          if (db.mods.some((m) =>
+            m.id !== mod.id &&
+            String(m.kickUsername || "").trim().toLowerCase() === kickUsername.toLowerCase()
+          )) {
+            throw new Error("حساب Kick هذا مربوط بمود آخر.");
+          }
+
+          mod.kickUsername = kickUsername;
+          pushLog(db, "إدارة", `تم ربط ${mod.name} بحساب Kick @${kickUsername}`);
+          return { ok: true };
+        });
+
         return json(result);
       }
 
@@ -377,8 +462,7 @@ export default async (req) => {
         const result = await mutate((db) => {
           const mod = db.mods.find((m) => m.id === body.id);
           if (!mod) throw new Error("المود غير موجود.");
-          if (mod.activeSessionId)
-            throw new Error("المود مسجل دخول الآن.");
+          if (mod.activeSessionId) throw new Error("المود مسجل دخول الآن.");
 
           db.mods = db.mods.filter((m) => m.id !== body.id);
           pushLog(db, "إدارة", `تم حذف المود ${mod.name}`);
@@ -394,8 +478,7 @@ export default async (req) => {
           const amount = Number(body.amount);
 
           if (!mod) throw new Error("المود غير موجود.");
-          if (!Number.isFinite(amount) || amount === 0)
-            throw new Error("اكتب عدد نقاط صحيح.");
+          if (!Number.isFinite(amount) || amount === 0) throw new Error("اكتب عدد نقاط صحيح.");
 
           mod.totalPoints += amount;
           mod.weekPoints += amount;
@@ -403,9 +486,7 @@ export default async (req) => {
           pushLog(
             db,
             "تعديل نقاط",
-            `${amount > 0 ? "تمت إضافة" : "تم خصم"} ${Math.abs(amount)} نقطة ${
-              amount > 0 ? "لـ" : "من"
-            } ${mod.name}`,
+            `${amount > 0 ? "تمت إضافة" : "تم خصم"} ${Math.abs(amount)} نقطة ${amount > 0 ? "لـ" : "من"} ${mod.name}`,
             { modId: mod.id, amount }
           );
           return { ok: true };
